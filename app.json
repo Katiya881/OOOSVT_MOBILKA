@@ -10,6 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.boltexponativewind",
       "infoPlist": {
         "NSFileProviderDomainUsageDescription": "We need access to your files to save the receipt in PDF format.",
         "NSCameraUsageDescription": "We need access to your camera to scan QR codes.",
@@ -17,12 +18,25 @@
       }
     },
     "android": {
+      "package": "com.boltexponativewind",
       "permissions": [
-        "WRITE_EXTERNAL_STORAGE",
+        "CAMERA",
         "READ_EXTERNAL_STORAGE",
-        "CAMERA"
+        "WRITE_EXTERNAL_STORAGE"
       ],
-      "package": "com.boltexponativewind"
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "myapp",
+              "host": "*",
+              "pathPrefix": ""
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -39,6 +53,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bb1e813d-848a-49d8-9f34-f6326ee0d199"
+      }
     }
   }
 }

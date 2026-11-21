@@ -8,6 +8,7 @@ import { getOrder, saveOrder, deleteOrder, loadProducts, updateOrderStatus } fro
 import Toast from 'react-native-toast-message';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import * as Print from 'expo-print';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const statusOptions = ['Pending', 'Processing', 'Shipped', 'Completed', 'Cancelled'];
@@ -32,6 +33,8 @@ export default function OrderDetailScreen() {
     status: 'Pending',
     items: [],
     total: 0,
+    notes: '',
+    paymentMethod: 'Cash',
   });
 
   useEffect(() => {
@@ -232,29 +235,99 @@ export default function OrderDetailScreen() {
   const generateReceiptHTML = () => {
     const itemsHTML = order.items.map(item => `
       <tr>
-        <td style="padding: 8px; border-bottom: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'};">${item.name}</td>
-        <td style="padding: 8px; border-bottom: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'}; text-align: center;">${item.quantity}</td>
-        <td style="padding: 8px; border-bottom: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'}; text-align: right;">
+        <td style="padding: 10px; border-bottom: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'}; text-align: left;">${item.productId}</td>
+        <td style="padding: 10px; border-bottom: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'}; text-align: left;">${item.name}</td>
+        <td style="padding: 10px; border-bottom: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'}; text-align: center;">${item.quantity}</td>
+        <td style="padding: 10px; border-bottom: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'}; text-align: right;">
+          ${item.price.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}
+        </td>
+        <td style="padding: 10px; border-bottom: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'}; text-align: right;">
           ${(item.price * item.quantity).toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}
         </td>
       </tr>
     `).join('');
 
+    const taxRate = 0.2;
+    const subtotal = order.total;
+    const taxAmount = subtotal * taxRate;
+    const grandTotal = subtotal + taxAmount;
+
     return `
       <html>
         <head>
           <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
-            body { font-family: Arial, sans-serif; margin: 20px; color: ${isDarkTheme ? '#F3F4F6' : '#1E293B'}; background-color: ${isDarkTheme ? '#1F2937' : '#FFFFFF'}; }
-            .receipt { max-width: 600px; margin: 0 auto; }
-            .header { text-align: center; margin-bottom: 20px; }
-            .header h1 { margin: 0; font-size: 24px; }
-            .info { margin-bottom: 20px; }
-            .info p { margin: 5px 0; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { padding: 8px; text-align: left; }
-            th { background-color: ${isDarkTheme ? '#374151' : '#F8FAFC'}; }
-            .total { text-align: right; font-size: 18px; font-weight: bold; }
+            body {
+              font-family: Arial, sans-serif;
+              margin: 40px;
+              color: ${isDarkTheme ? '#F3F4F6' : '#1E293B'};
+              background-color: ${isDarkTheme ? '#1F2937' : '#FFFFFF'};
+              line-height: 1.5;
+            }
+            .receipt {
+              max-width: 800px;
+              margin: 0 auto;
+              border: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'};
+              padding: 20px;
+              border-radius: 8px;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 20px;
+              border-bottom: 2px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'};
+              padding-bottom: 10px;
+            }
+            .header h1 {
+              margin: 0;
+              font-size: 28px;
+              color: ${isDarkTheme ? '#60A5FA' : '#3B82F6'};
+            }
+            .company-info {
+              margin-bottom: 20px;
+              text-align: center;
+              font-size: 14px;
+            }
+            .info {
+              margin-bottom: 20px;
+              display: flex;
+              justify-content: space-between;
+            }
+            .info-column {
+              width: 48%;
+            }
+            .info p {
+              margin: 5px 0;
+              font-size: 14px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 20px;
+            }
+            th, td {
+              padding: 10px;
+              text-align: left;
+              font-size: 14px;
+            }
+            th {
+              background-color: ${isDarkTheme ? '#374151' : '#F8FAFC'};
+              font-weight: bold;
+            }
+            .total {
+              text-align: right;
+              font-size: 16px;
+              font-weight: bold;
+              margin-top: 20px;
+            }
+            .footer {
+              text-align: center;
+              margin-top: 30px;
+              font-size: 12px;
+              color: ${isDarkTheme ? '#A3BFFA' : '#64748B'};
+              border-top: 1px solid ${isDarkTheme ? '#4B5563' : '#E2E8F0'};
+              padding-top: 10px;
+            }
           </style>
         </head>
         <body>
@@ -262,23 +335,47 @@ export default function OrderDetailScreen() {
             <div class="header">
               <h1>Чек заказа #${order.orderNumber}</h1>
             </div>
+            <div class="company-info">
+              <p><strong>ООО "СПЕЦВИДЕОТЕХНИКА"</strong></p>
+              <p>Адрес: ул. Демиденко, 54, Черкесск, Карачаево-Черкесская Республика</p>
+              <p>ИНН: 1234567890 | Телефон: +7 (906) 443-43-32</p>
+              <p>Email: info@spetsvideo.ru</p>
+            </div>
             <div class="info">
-              <p><strong>Клиент:</strong> ${order.customer}</p>
-              <p><strong>Дата:</strong> ${new Date(order.date).toLocaleDateString('ru-RU')}</p>
-              <p><strong>Статус:</strong> ${translateStatus(order.status)}</p>
+              <div class="info-column">
+                <p><strong>Клиент:</strong> ${order.customer}</p>
+                <p><strong>Дата заказа:</strong> ${new Date(order.date).toLocaleDateString('ru-RU', {
+                  day: '2-digit',
+                  month: 'long',
+                  year: 'numeric',
+                })}</p>
+                <p><strong>Время заказа:</strong> ${new Date(order.date).toLocaleTimeString('ru-RU')}</p>
+              </div>
+              <div class="info-column">
+                <p><strong>Статус:</strong> ${translateStatus(order.status)}</p>
+                <p><strong>Способ оплаты:</strong> ${order.paymentMethod}</p>
+                <p><strong>Примечания:</strong> ${order.notes || 'Нет'}</p>
+              </div>
             </div>
             <table>
               <tr>
-                <th>Товар</th>
+                <th>Код товара</th>
+                <th>Наименование</th>
                 <th>Количество</th>
+                <th>Цена за ед.</th>
                 <th>Сумма</th>
               </tr>
               ${itemsHTML}
             </table>
             <div class="total">
-              <p>Промежуточный итог: ${order.total.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}</p>
-              <p>Налог: ${(0).toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}</p>
-              <p>Итого: ${order.total.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}</p>
+              <p>Промежуточный итог: ${subtotal.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}</p>
+              <p>НДС (20%): ${taxAmount.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}</p>
+              <p>Итого: ${grandTotal.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}</p>
+            </div>
+            <div class="footer">
+              <p>Спасибо за ваш заказ!</p>
+              <p>Для возврата или обмена сохраните этот чек.</p>
+              <p>© 2025 ООО "СПЕЦВИДЕОТЕХНИКА". Все права защищены.</p>
             </div>
           </div>
         </body>
@@ -299,27 +396,39 @@ export default function OrderDetailScreen() {
     setIsGeneratingReceipt(true);
     try {
       const htmlContent = generateReceiptHTML();
-      const fileUri = `${FileSystem.documentDirectory}Receipt_${order.orderNumber}.html`;
-      await FileSystem.writeAsStringAsync(fileUri, htmlContent, {
-        encoding: FileSystem.EncodingType.UTF8,
+      const { uri } = await Print.printToFileAsync({
+        html: htmlContent,
+        width: 595,
+        height: 842,
+      });
+
+      const fileUri = `${FileSystem.documentDirectory}Receipt_${order.orderNumber}.pdf`;
+      await FileSystem.moveAsync({
+        from: uri,
+        to: fileUri,
       });
 
       if (!(await Sharing.isAvailableAsync())) {
         throw new Error('Общий доступ недоступен на этом устройстве');
       }
 
-      await Sharing.shareAsync(fileUri);
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'application/pdf',
+        dialogTitle: `Чек заказа #${order.orderNumber}`,
+        UTI: 'com.adobe.pdf',
+      });
+
       Toast.show({
         type: 'success',
         text1: 'Чек создан',
-        text2: `HTML-чек для заказа #${order.orderNumber} готов`,
+        text2: `PDF-чек для заказа #${order.orderNumber} готов`,
       });
     } catch (error) {
-      console.error('Ошибка создания чека:', error);
+      console.error('Ошибка создания PDF чека:', error);
       Toast.show({
         type: 'error',
         text1: 'Ошибка',
-        text2: `Не удалось создать чек: ${error.message}`,
+        text2: `Не удалось создать PDF чек: ${error.message}`,
       });
     } finally {
       setIsGeneratingReceipt(false);
@@ -451,6 +560,27 @@ export default function OrderDetailScreen() {
               ))}
             </View>
           </View>
+          <View style={styles.formGroup}>
+            <Text style={[styles.label, isDarkTheme ? styles.darkText : {}]}>Способ оплаты</Text>
+            <TextInput
+              style={[styles.customerInput, isDarkTheme ? styles.darkInput : {}]}
+              value={order.paymentMethod}
+              onChangeText={(text) => setOrder(prev => ({ ...prev, paymentMethod: text }))}
+              placeholder="Введите способ оплаты (например, Наличные, Карта)"
+              placeholderTextColor={isDarkTheme ? '#A3BFFA' : '#94A3B8'}
+            />
+          </View>
+          <View style={styles.formGroup}>
+            <Text style={[styles.label, isDarkTheme ? styles.darkText : {}]}>Примечания</Text>
+            <TextInput
+              style={[styles.customerInput, isDarkTheme ? styles.darkInput : {}, { height: 80 }]}
+              value={order.notes}
+              onChangeText={(text) => setOrder(prev => ({ ...prev, notes: text }))}
+              placeholder="Введите примечания к заказу"
+              placeholderTextColor={isDarkTheme ? '#A3BFFA' : '#94A3B8'}
+              multiline
+            />
+          </View>
         </View>
         <View style={[styles.itemsSection, isDarkTheme ? styles.darkCard : {}]}>
           <View style={styles.sectionHeader}>
@@ -514,7 +644,7 @@ export default function OrderDetailScreen() {
             ) : (
               <>
                 <FileText size={20} color="#FFFFFF" />
-                <Text style={styles.receiptButtonText}>Создать чек (HTML)</Text>
+                <Text style={styles.receiptButtonText}>Создать PDF чек</Text>
               </>
             )}
           </Pressable>
@@ -525,15 +655,15 @@ export default function OrderDetailScreen() {
             </Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, isDarkTheme ? styles.darkSubtext : {}]}>Налог</Text>
+            <Text style={[styles.summaryLabel, isDarkTheme ? styles.darkSubtext : {}]}>НДС (20%)</Text>
             <Text style={[styles.summaryValue, isDarkTheme ? styles.darkText : {}]}>
-              {(0).toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}
+              {(order.total * 0.2).toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}
             </Text>
           </View>
           <View style={[styles.summaryTotalRow, isDarkTheme ? { borderTopColor: '#4B5563' } : {}]}>
             <Text style={[styles.totalLabel, isDarkTheme ? styles.darkText : {}]}>Итого</Text>
             <Text style={[styles.totalValue, isDarkTheme ? styles.darkText : {}]}>
-              {order.total.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}
+              {(order.total * 1.2).toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })}
             </Text>
           </View>
         </View>

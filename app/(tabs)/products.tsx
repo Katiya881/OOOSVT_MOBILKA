@@ -8,28 +8,24 @@ import {
   TextInput,
   ActivityIndicator,
   Modal,
-  Linking,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
-import { Plus, Search, SlidersHorizontal, Camera as CameraIcon } from 'lucide-react-native';
-import { Camera, useCameraPermissions, BarCodeScanner } from 'expo-camera';
+import { Plus, Search, SlidersHorizontal } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
-import { loadProducts, getProduct } from '@/utils/dataService';
+import { loadProducts } from '@/utils/dataService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ProductsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { lowStock } = useLocalSearchParams(); // Get navigation parameters
+  const { viewMode } = useLocalSearchParams(); // Changed from lowStock to viewMode
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isScanning, setIsScanning] = useState(false);
-  const [permission, requestPermission] = useCameraPermissions();
   const [isDarkTheme, setIsDarkTheme] = useState(false);
   const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
@@ -38,7 +34,6 @@ export default function ProductsScreen() {
   const fetchProducts = async () => {
     try {
       setIsLoading(true);
-      // Load theme
       const savedTheme = await AsyncStorage.getItem('theme');
       const now = new Date();
       const hours = now.getHours();
@@ -49,14 +44,11 @@ export default function ProductsScreen() {
         setIsDarkTheme(autoDarkTheme);
         await AsyncStorage.setItem('theme', autoDarkTheme ? 'dark' : 'light');
       }
-      // Load products
       const productData = await loadProducts();
       setProducts(productData);
       setFilteredProducts(productData);
-      // Extract unique categories
       const uniqueCategories = [...new Set(productData.map((product) => product.category))].sort();
       setAllCategories(uniqueCategories);
-      // Load selected categories
       const savedCategories = await AsyncStorage.getItem('selectedCategories');
       if (savedCategories) {
         const parsedCategories = JSON.parse(savedCategories);
@@ -87,26 +79,25 @@ export default function ProductsScreen() {
     }, [])
   );
 
-  // Reset lowStock filter when navigating to the screen without lowStock param
   useFocusEffect(
     useCallback(() => {
-      if (lowStock !== 'true') {
-        // Reset to all products if lowStock is not explicitly set
-        setFilteredProducts(products);
+      setSearchQuery(''); // Clear search query
+      setSelectedCategories(allCategories); // Reset category filter
+      if (viewMode === 'lowStock') {
+        setFilteredProducts(products.filter((product) => product.quantity <= product.lowStockThreshold));
+      } else {
+        setFilteredProducts(products); // Show all products
       }
-    }, [lowStock, products])
+    }, [viewMode, products, allCategories])
   );
 
-  // Filter products based on search, categories, and low stock
   useEffect(() => {
     let filtered = products;
 
-    // Filter by low stock if lowStock parameter is true
-    if (lowStock === 'true') {
+    if (viewMode === 'lowStock') {
       filtered = filtered.filter((product) => product.quantity <= product.lowStockThreshold);
     }
 
-    // Search filter
     if (searchQuery.trim() !== '') {
       filtered = filtered.filter((product) => {
         const query = searchQuery.toLowerCase();
@@ -121,91 +112,15 @@ export default function ProductsScreen() {
       });
     }
 
-    // Category filter
     if (selectedCategories.length > 0 && selectedCategories.length < allCategories.length) {
       filtered = filtered.filter((product) => selectedCategories.includes(product.category));
     }
 
     setFilteredProducts(filtered);
-  }, [searchQuery, products, selectedCategories, allCategories, lowStock]);
+  }, [searchQuery, products, selectedCategories, allCategories, viewMode]);
 
   const handleAddProduct = () => {
     router.push('/product-detail');
-  };
-
-  const handleScanQr = async () => {
-    try {
-      if (!permission) {
-        const newPermission = await requestPermission();
-        if (!newPermission.granted) {
-          Toast.show({
-            type: 'error',
-            text1: 'Ошибка',
-            text2: 'Требуется разрешение на использование камеры. Разрешите доступ в настройках.',
-          });
-          Linking.openSettings();
-          return;
-        }
-      } else if (!permission.granted) {
-        Toast.show({
-          type: 'error',
-          text1: 'Ошибка',
-          text2: 'Требуется разрешение на использование камеры. Разрешите доступ в настройках.',
-        });
-        Linking.openSettings();
-        return;
-      }
-      setIsScanning(true);
-    } catch (error) {
-      console.error('Ошибка при запросе разрешения камеры:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Ошибка',
-        text2: 'Не удалось открыть камеру',
-      });
-    }
-  };
-
-  const handleBarCodeScanned = async ({ data }) => {
-    setIsScanning(false);
-    try {
-      let productId;
-      try {
-        const url = new URL(data);
-        productId = url.searchParams.get('id');
-      } catch {
-        productId = data;
-      }
-      if (!productId) {
-        Toast.show({
-          type: 'error',
-          text1: 'Ошибка',
-          text2: 'Недействительный QR-код: ID товара не найден',
-        });
-        return;
-      }
-      const product = await getProduct(productId);
-      if (product) {
-        router.push(`/product-detail?id=${productId}`);
-      } else {
-        Toast.show({
-          type: 'error',
-          text1: 'Ошибка',
-          text2: 'Товар с таким ID не найден',
-        });
-      }
-    } catch (error) {
-      console.error('Ошибка обработки QR-кода:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Ошибка',
-        text2: 'Не удалось обработать QR-код',
-      });
-    }
-  };
-
-  const closeScanner = () => {
-    setIsScanning(false);
   };
 
   const handleProductPress = (productId) => {
@@ -259,22 +174,12 @@ export default function ProductsScreen() {
     </Pressable>
   );
 
-  const qrFrameStyle = {
-    ...styles.qrFrame,
-    borderColor: isDarkTheme ? 'rgba(255, 255, 255, 0.7)' : 'rgba(255, 255, 255, 0.5)',
-  };
-
-  const qrCornerStyle = {
-    ...styles.qrCorner,
-    borderColor: isDarkTheme ? '#A3BFFA' : '#FFFFFF',
-  };
-
   return (
     <SafeAreaView style={[styles.container, isDarkTheme ? styles.darkContainer : {}]}>
       <StatusBar style={isDarkTheme ? 'light' : 'auto'} />
       <View style={[styles.header, isDarkTheme ? styles.darkHeader : {}]}>
         <Text style={[styles.title, isDarkTheme ? styles.darkText : {}]}>
-          {lowStock === 'true' ? 'Мало на складе' : 'Товары'}
+          {viewMode === 'lowStock' ? 'Мало на складе' : 'Товары'}
         </Text>
         <View style={styles.headerActions}>
           <Pressable
@@ -282,12 +187,6 @@ export default function ProductsScreen() {
             onPress={handleAddProduct}
           >
             <Plus size={18} color="#FFFFFF" />
-          </Pressable>
-          <Pressable
-            style={[styles.scanButton, isDarkTheme ? { backgroundColor: '#34D399' } : { backgroundColor: '#10B981' }]}
-            onPress={handleScanQr}
-          >
-            <CameraIcon size={18} color="#FFFFFF" />
           </Pressable>
         </View>
       </View>
@@ -330,7 +229,7 @@ export default function ProductsScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={[styles.emptyText, isDarkTheme ? styles.darkText : {}]}>
-                {lowStock === 'true' ? 'Товары с низким запасом не найдены' : 'Товары не найдены'}
+                {viewMode === 'lowStock' ? 'Товары с низким запасом не найдены' : 'Товары не найдены'}
               </Text>
               <Text style={[styles.emptySubtext, isDarkTheme ? styles.darkSubtext : {}]}>
                 Попробуйте изменить поиск или выбрать другие категории
@@ -396,33 +295,6 @@ export default function ProductsScreen() {
           </View>
         </View>
       </Modal>
-
-      {isScanning && (
-        <Modal visible={isScanning} animationType="slide" onRequestClose={closeScanner}>
-          <SafeAreaView style={[styles.scanContainer, isDarkTheme ? styles.darkScanContainer : {}]}>
-            <Camera
-              style={styles.camera}
-              onBarCodeScanned={isScanning ? handleBarCodeScanned : undefined}
-              barCodeScannerSettings={{
-                barCodeTypes: [BarCodeScanner.Constants.BarCodeType.qr],
-              }}
-            >
-              <View style={qrFrameStyle}>
-                <View style={[qrCornerStyle, styles.qrTopLeft]} />
-                <View style={[qrCornerStyle, styles.qrTopRight]} />
-                <View style={[qrCornerStyle, styles.qrBottomLeft]} />
-                <View style={[qrCornerStyle, styles.qrBottomRight]} />
-              </View>
-            </Camera>
-            <Pressable
-              style={[styles.scanCloseButton, isDarkTheme ? { backgroundColor: '#60A5FA' } : { backgroundColor: '#3B82F6' }]}
-              onPress={closeScanner}
-            >
-              <Text style={styles.scanCloseText}>Закрыть</Text>
-            </Pressable>
-          </SafeAreaView>
-        </Modal>
-      )}
 
       <Toast />
     </SafeAreaView>
@@ -496,13 +368,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 6,
-  },
-  scanButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -649,66 +514,6 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     color: '#94A3B8',
-  },
-  scanContainer: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  darkScanContainer: {
-    backgroundColor: '#1F2937',
-  },
-  camera: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  qrFrame: {
-    width: 250,
-    height: 250,
-    borderWidth: 2,
-    position: 'relative',
-  },
-  qrCorner: {
-    width: 30,
-    height: 30,
-    position: 'absolute',
-  },
-  qrTopLeft: {
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-    top: -2,
-    left: -2,
-  },
-  qrTopRight: {
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-    top: -2,
-    right: -2,
-  },
-  qrBottomLeft: {
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
-    bottom: -2,
-    left: -2,
-  },
-  qrBottomRight: {
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
-    bottom: -2,
-    right: -2,
-  },
-  scanCloseButton: {
-    position: 'absolute',
-    bottom: 32,
-    alignSelf: 'center',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  scanCloseText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
